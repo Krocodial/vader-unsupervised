@@ -15,7 +15,7 @@ clean_df = log_to_dataframe.LogToDataFrame('bro/clean_traffic/conn.log')
 mixed_df = log_to_dataframe.LogToDataFrame('bro/malicious_traffic/conn.log')
 print(clean_df.head())
 print(mixed_df.head())
-features = ['ts', 'day', 'id.resp_h', 'id.resp_p', 'proto', 'service', 'orig_bytes', 'resp_bytes']
+features = ['ts', 'day', 'id.resp_h', 'id.resp_p', 'proto', 'service', 'duration', 'orig_bytes', 'resp_bytes', 'local_orig', 'local_resp', 'orig_pkts', 'resp_pkts']
 #features = ['id.orig_h', 'id.resp_h']
 
 clean_df = clean_df.reset_index()
@@ -27,6 +27,8 @@ mixed_df = mixed_df[mixed_df.service != 'dns']
 def convert(ip):
 	match = geolite2.lookup(ip)
 	if match is None:
+		return 'N/a'
+	if match.country is None:
 		return 'N/a'
 	return match.country
 
@@ -55,12 +57,34 @@ mixed_df['label'] = 'score'
 print(clean_df.head())
 print(mixed_df.head())
 
+#clean_df = clean_df.reset_index(drop=True)
+#mixed_df = mixed_df.reset_index(drop=True)
+
+
+for col in clean_df:
+	clean_df['id.resp_p'] = clean_df['id.resp_p'].astype('category')
+	clean_df['id.resp_h'] = clean_df['id.resp_h'].astype('category')
+	clean_df['proto'] = clean_df['proto'].astype('category')
+	clean_df['service'] = clean_df['service'].astype('category')
+	clean_df['duration'] = clean_df['duration'].astype('int64')
+
+for col in mixed_df:
+	mixed_df['id.resp_p'] = mixed_df['id.resp_p'].astype('category')
+	mixed_df['id.resp_h'] = mixed_df['id.resp_h'].astype('category')
+	mixed_df['proto'] = mixed_df['proto'].astype('category')
+	mixed_df['service'] = mixed_df['service'].astype('category')
+	mixed_df['duration'] = mixed_df['duration'].astype('int64')
+
+print(clean_df.dtypes)
+
 clean_df.to_csv('clean_output.csv')
 mixed_df.to_csv('mixed_output.csv')
 
-concat_df = pd.concat([clean_df, mixed_df])
-features_df = pd.get_dummies(concat_df, columns=['id.resp_h', 'id.resp_p', 'proto', 'service', 'orig_bytes', 'resp_bytes'], dummy_na=True)
 
+concat_df = pd.concat([clean_df, mixed_df])
+#features_df = pd.get_dummies(concat_df, columns=['id.resp_h', 'id.resp_p', 'proto', 'service', 'orig_bytes', 'resp_bytes'], dummy_na=True)
+
+features_df = pd.get_dummies(concat_df, columns=['id.resp_h', 'id.resp_p', 'proto', 'service'])
 features_df.to_csv('concatted_output.csv')
 
 train_df = features_df[features_df['label'] == 'train']
@@ -70,8 +94,8 @@ train_df = train_df.drop('label', axis=1)
 score_df = score_df.drop('label', axis=1)
 
 #bro_df[features].to_csv('output.csv')
-train_df.to_csv('clean_output.csv')
-score_df.to_csv('mixed_output.csv')
+#train_df.to_csv('clean_output.csv')
+#score_df.to_csv('mixed_output.csv')
 
 clean_matrix = train_df.to_numpy()
 mixed_matrix = score_df.to_numpy()
@@ -83,12 +107,13 @@ mixed_matrix = score_df.to_numpy()
 
 #results = IsolationForest().fit_predict(mixed_matrix)
 
-model = IsolationForest(contamination=0.05).fit(clean_matrix)
+model = IsolationForest(contamination=0.10).fit(clean_matrix)
 results = mixed_df[features][model.predict(mixed_matrix) == -1]
 print(results.shape)
 print(results.head())
 
 results.to_csv('outliers.csv')
+
 
 '''
 print(bro_matrix)
